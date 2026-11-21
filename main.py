@@ -1,32 +1,39 @@
 #!/usr/bin/env python3
-"""Write the entry image to the output directory (deterministic copy).
+"""Entry point for the make.fun news-image-20261121 bounty.
 
-After copying, the output is verified against the source by sha256; a
-mismatch exits 1 so a bad run never passes as a good one.
+Copies the pre-rendered front page (entry.png, produced by draw_news.py)
+into the output directory the grader provides, so the judge receives the
+image at $MAKEFUN_OUTPUT_DIR/entry.png. Standard library only.
 """
+
 import hashlib
 import os
 import shutil
 import sys
-from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-OUT = Path(os.environ.get("MAKEFUN_OUTPUT_DIR", "/output"))
+HERE = os.path.dirname(os.path.abspath(__file__))
+SOURCE = os.path.join(HERE, "entry.png")
 
 
-def sha256(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+def sha256_of(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def main():
-    OUT.mkdir(parents=True, exist_ok=True)
-    src = HERE / "entry.png"
-    dst = OUT / "entry.png"
-    shutil.copyfile(src, dst)
-    if sha256(src) != sha256(dst):
-        print("error: output sha256 does not match entry.png", file=sys.stderr)
-        sys.exit(1)
+    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR", "/output")
+    os.makedirs(out_dir, exist_ok=True)
+    dest = os.path.join(out_dir, "entry.png")
+    shutil.copyfile(SOURCE, dest)
+    if sha256_of(SOURCE) != sha256_of(dest):
+        print("error: sha256 mismatch after copy", file=sys.stderr)
+        return 1
+    print("wrote", dest)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
