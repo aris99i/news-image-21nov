@@ -1,188 +1,202 @@
 #!/usr/bin/env python3
 """Draw the front page of THE WORLD for Saturday, 21 November 2026.
 
-One deterministic image: no timestamps, no randomness. Every story is a
-verified fact from the 21 November 2026 news list supplied for this entry.
+A single 1024x1024 newspaper page: masthead, a small globe sketch,
+one lead story and eleven more stories in a two-column grid.
+Deterministic: no randomness, no timestamps, no network.
 """
-import textwrap
+
+import os
 
 from PIL import Image, ImageDraw, ImageFont
 
-W, H = 1024, 1024
-PAPER = (248, 244, 232)
-INK = (17, 17, 17)
-RED = (163, 18, 18)
-BLUE = (47, 111, 178)
-GREEN = (58, 158, 79)
-LIGHT_BLUE = (120, 170, 215)
-GREY = (90, 86, 76)
+W = H = 1024
+MARGIN = 36
+CONTENT_W = W - 2 * MARGIN
 
-SERIF_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf"
-SERIF = "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"
-SANS = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-SANS_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-SANS_ITALIC = "/usr/share/fonts/truetype/liberation/LiberationSans-Italic.ttf"
-
-# (headline, body) for the 11 stories below the lead.
-STORIES = [
-    ("AI Sell-Off Wipes Out Nasdaq\u2019s 2026 Gains",
-     "The S&P 500 fell 3.7% into correction; the Nasdaq slid 5.28%."),
-    ("UK\u2013EU Sign Biggest Post-Brexit Deals",
-     "Three pacts on food trade, carbon markets and youth mobility."),
-    ("COP31 Runs Past Deadline in Antalya",
-     "Climate talks deadlocked over fossil fuels as 200 nations failed to agree."),
-    ("Houthi Missiles Target Riyadh Again",
-     "The Saudi-led coalition intercepted three missiles for a third night."),
-    ("FBI Database Reportedly Hacked",
-     "FBI and Agriculture Department systems hit as US outages continue."),
-    ("Quake Shakes Peru\u2019s Andes",
-     "A magnitude 6.9 earthquake struck the Peruvian Andes."),
-    ("Pill Beats Pancreatic Cancer in Trial",
-     "Daraxonrasib made tumours undetectable in one in 12 patients."),
-    ("Gen Z Protests Sweep Europe",
-     "Demonstrations spread across 25 countries over wars, costs and climate."),
-    ("Palisades Fire Arson Verdict",
-     "A man was convicted of starting the deadly Los Angeles fire."),
-    ("Trump Calls Putin \u2018My Friend\u2019",
-     "Zelensky replied that Putin is a \u2018killer\u2019 as Trump defended his ties."),
-    ("Bitcoin Slides Toward $62K",
-     "Crypto liquidations topped $2 billion in 24 hours."),
-]
+INK = (18, 18, 18)
+RED = (178, 34, 34)
+GREY = (110, 110, 110)
+BLUE = (28, 68, 128)
+LIGHT_BLUE = (198, 222, 240)
+GREEN = (74, 140, 74)
+PAPER = (252, 250, 244)
 
 
-def font(path, size):
-    return ImageFont.truetype(path, size)
+def load_font(bold, size):
+    candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold
+        else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold
+        else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    ]
+    for path in candidates:
+        try:
+            return ImageFont.truetype(path, size)
+        except (OSError, IOError):
+            continue
+    return ImageFont.load_default()
 
 
-def wrap(draw, text, fnt, max_w):
-    """Wrap text to pixel width, returning a list of lines."""
+def wrap(draw, text, font, max_width):
+    """Split text into lines that fit max_width, word by word."""
     words = text.split()
-    lines, cur = [], ""
+    lines = []
+    current = ""
     for word in words:
-        trial = (cur + " " + word).strip()
-        if draw.textlength(trial, font=fnt) <= max_w:
-            cur = trial
+        trial = (current + " " + word).strip()
+        if draw.textlength(trial, font=font) <= max_width:
+            current = trial
         else:
-            if cur:
-                lines.append(cur)
-            cur = word
-    if cur:
-        lines.append(cur)
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
     return lines
 
 
 def draw_globe(draw, cx, cy, r):
-    """Stylised globe: blue ocean, green land blobs, thin grid lines."""
-    draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=BLUE, outline=INK, width=3)
-    # Land blobs (abstract continents), clipped roughly inside the circle.
-    blobs = [
-        [(cx - 95, cy - 75), (cx - 30, cy - 95), (cx - 5, cy - 55),
-         (cx - 55, cy - 30), (cx - 100, cy - 40)],
-        [(cx + 15, cy - 70), (cx + 75, cy - 85), (cx + 95, cy - 35),
-         (cx + 45, cy - 20), (cx + 10, cy - 35)],
-        [(cx - 70, cy + 15), (cx - 10, cy + 5), (cx + 5, cy + 55),
-         (cx - 45, cy + 80), (cx - 85, cy + 50)],
-        [(cx + 35, cy + 25), (cx + 90, cy + 35), (cx + 80, cy + 85),
-         (cx + 40, cy + 95), (cx + 25, cy + 55)],
-    ]
-    for blob in blobs:
-        draw.polygon(blob, fill=GREEN)
-    # Grid: meridians and parallels, clipped by the circle via short arcs.
-    for k in (-0.55, 0.0, 0.55):
-        x = cx + int(k * r)
-        h = int(r * (1 - k * k) ** 0.5)
-        draw.line([(x, cy - h), (x, cy + h)], fill=LIGHT_BLUE, width=2)
-    for k in (-0.5, 0.0, 0.5):
-        y = cy + int(k * r)
-        wdt = int(r * (1 - k * k) ** 0.5)
-        draw.line([(cx - wdt, y), (cx + wdt, y)], fill=LIGHT_BLUE, width=2)
-    # Highlight arc top-left.
-    draw.arc([cx - r + 12, cy - r + 12, cx + r - 40, cy + r - 40],
-             start=150, end=250, fill=(255, 255, 255), width=6)
+    """A small stylised globe: blue disc, meridians and land blobs."""
+    draw.ellipse([cx - r, cy - r, cx + r, cy + r],
+                 fill=LIGHT_BLUE, outline=BLUE, width=3)
+    # meridians
+    for k in (0.45, 0.8):
+        w = int(r * k)
+        draw.ellipse([cx - w, cy - r, cx + w, cy + r], outline=BLUE, width=2)
+    # parallels
+    for dy in (-r // 2, r // 2):
+        w = int((r * r - dy * dy) ** 0.5)
+        draw.line([cx - w, cy + dy, cx + w, cy + dy], fill=BLUE, width=2)
+    # rough land masses
+    draw.ellipse([cx - r + 8, cy - r + 12, cx - 6, cy - 2], fill=GREEN)
+    draw.ellipse([cx + 2, cy + 2, cx + r - 10, cy + r - 12], fill=GREEN)
+    draw.ellipse([cx - 4, cy - r + 6, cx + 12, cy - r + 22], fill=GREEN)
+
+
+LEAD_HEADLINE = "Russia's Biggest Barrage Yet Hits Ukraine"
+LEAD_SUMMARY = (
+    "More than 400 drones and 110 missiles struck cities overnight and "
+    "eight people were killed in Kyiv. Two missiles and a drone came down "
+    "inside Poland, raising fears the war is spilling across borders."
+)
+
+STORIES = [
+    ("AI Stocks Drag Wall Street Down",
+     "The S&P 500 slid 3.7% as investors dumped artificial-intelligence "
+     "shares in the sharpest sell-off in months."),
+    ("UK and EU Strike New Trade Deal",
+     "London and Brussels reached a fresh trade agreement, easing border "
+     "checks and cutting costs for exporters."),
+    ("Climate Talks Stall in Antalya",
+     "COP31 negotiations deadlocked in Turkey as countries split over "
+     "fossil-fuel language in the draft text."),
+    ("Houthi Missiles Strike Riyadh",
+     "Missiles fired from Yemen hit the Saudi capital, damaging buildings "
+     "and rattling markets across the region."),
+    ("FBI Database Breached",
+     "Hackers broke into a Federal Bureau of Investigation database, "
+     "exposing sensitive records and triggering an urgent probe."),
+    ("Magnitude 6.9 Quake Shakes Peru",
+     "A powerful earthquake rattled southern Peru, sending residents into "
+     "the streets as damage reports came in."),
+    ("Pancreatic Cancer Pill Shows Promise",
+     "An experimental pill delivered encouraging early results against one "
+     "of the deadliest cancers, researchers said."),
+    ("Gen Z Protests Sweep 25 European Nations",
+     "Young demonstrators marched across 25 countries, demanding action "
+     "on housing, jobs and the climate."),
+    ("Palisades Arsonist Found Guilty",
+     "A jury convicted the man accused of starting the Palisades wildfire, "
+     "closing a case that gripped California."),
+    ("Trump, Putin and Zelensky: Diplomacy in Motion",
+     "Fresh signals from Washington, Moscow and Kyiv kept hopes of a "
+     "negotiated end to the war flickering."),
+    ("Bitcoin Drops to $62,000",
+     "Bitcoin tumbled to $62,000 as more than $2 billion in leveraged "
+     "positions were liquidated in a single day."),
+]
 
 
 def main():
     img = Image.new("RGB", (W, H), PAPER)
-    d = ImageDraw.Draw(img)
+    draw = ImageDraw.Draw(img)
 
-    # ---- Masthead ----
-    f_mast = font(SERIF_BOLD, 96)
-    d.text((W // 2, 24), "THE WORLD", font=f_mast, fill=INK, anchor="ma")
-    f_date = font(SANS_BOLD, 21)
-    d.text((36, 138), "SATURDAY, 21 NOVEMBER 2026", font=f_date, fill=INK)
-    d.text((988, 138), "EDITION No. 21", font=f_date, fill=INK, anchor="ra")
-    d.line([(36, 168), (988, 168)], fill=INK, width=3)
-    d.line([(36, 173), (988, 173)], fill=INK, width=1)
+    masthead_font = load_font(True, 84)
+    date_font = load_font(False, 20)
+    kicker_font = load_font(True, 16)
+    lead_head_font = load_font(True, 36)
+    lead_body_font = load_font(False, 18)
+    head_font = load_font(True, 19)
+    body_font = load_font(False, 14)
+    foot_font = load_font(False, 13)
 
-    # ---- Lead story (left) ----
-    f_kick = font(SANS_BOLD, 20)
-    d.text((36, 192), "WAR IN UKRAINE", font=f_kick, fill=RED)
-    f_lead_head = font(SERIF_BOLD, 40)
-    head_lines = wrap(d, "Russia\u2019s Biggest Barrage Hits Kyiv \u2014 and Poland",
-                      f_lead_head, 620)
-    y = 222
-    for line in head_lines:
-        d.text((36, y), line, font=f_lead_head, fill=INK)
-        y += 48
-    f_lead_body = font(SERIF, 20)
-    body_lines = wrap(
-        d,
-        "More than 400 drones and 110 missiles struck Ukraine overnight, "
-        "killing at least eight in Kyiv; two missiles and a suspected drone "
-        "came down in Poland, which Warsaw called a deliberate provocation.",
-        f_lead_body, 620)
-    y += 6
-    for line in body_lines:
-        d.text((36, y), line, font=f_lead_body, fill=INK)
-        y += 27
+    # --- masthead -------------------------------------------------------
+    title = "THE WORLD"
+    tw = draw.textlength(title, font=masthead_font)
+    draw.text(((W - tw) / 2, 26), title, font=masthead_font, fill=INK)
+    date_line = "Saturday, 21 November 2026"
+    dw = draw.textlength(date_line, font=date_font)
+    draw.text(((W - dw) / 2, 118), date_line, font=date_font, fill=GREY)
+    draw_globe(draw, 918, 76, 44)
+    draw.line([MARGIN, 152, W - MARGIN, 152], fill=INK, width=3)
+    draw.line([MARGIN, 158, W - MARGIN, 158], fill=INK, width=1)
 
-    # ---- Globe (right) ----
-    draw_globe(d, 834, 292, 132)
-    f_cap = font(SANS_ITALIC, 15)
-    cap = wrap(d, "Kyiv under fire as Russian missiles also land in Poland.",
-               f_cap, 300)
-    cy = 434
-    for line in cap:
-        d.text((834, cy), line, font=f_cap, fill=GREY, anchor="ma")
-        cy += 19
+    # --- lead story ------------------------------------------------------
+    y = 176
+    draw.text((MARGIN, y), "LEAD STORY", font=kicker_font, fill=RED)
+    y += 26
+    for line in wrap(draw, LEAD_HEADLINE, lead_head_font, CONTENT_W):
+        draw.text((MARGIN, y), line, font=lead_head_font, fill=INK)
+        y += 44
+    y += 4
+    for line in wrap(draw, LEAD_SUMMARY, lead_body_font, CONTENT_W):
+        draw.text((MARGIN, y), line, font=lead_body_font, fill=INK)
+        y += 24
+    draw.line([MARGIN, 322, W - MARGIN, 322], fill=INK, width=2)
 
-    # ---- Rule above the story grid ----
-    d.line([(36, 488), (988, 488)], fill=INK, width=2)
+    # --- two-column grid: 11 stories + one markets box ------------------
+    grid_top = 338
+    col_w = (CONTENT_W - 16) // 2
+    row_h = 100
+    row_gap = 6
+    for idx, (headline, summary) in enumerate(STORIES):
+        row = idx // 2
+        col = idx % 2
+        x = MARGIN + col * (col_w + 16)
+        cy = grid_top + row * (row_h + row_gap)
+        lines = wrap(draw, headline, head_font, col_w)
+        hy = cy
+        for line in lines[:2]:
+            draw.text((x, hy), line, font=head_font, fill=INK)
+            hy += 23
+        for line in wrap(draw, summary, body_font, col_w)[:2]:
+            draw.text((x, hy), line, font=body_font, fill=(60, 60, 60))
+            hy += 18
 
-    # ---- Story grid: 3 columns, 4 / 4 / 3 stories ----
-    cols = [STORIES[0:4], STORIES[4:8], STORIES[8:11]]
-    x_starts = [36, 362, 688]
-    col_w = 300
-    f_story_head = font(SERIF_BOLD, 22)
-    f_story_body = font(SANS, 16)
-    y_top = 504
-    max_y = y_top
-    for x, stories in zip(x_starts, cols):
-        y = y_top
-        for headline, body in stories:
-            lines = wrap(d, headline, f_story_head, col_w)
-            for line in lines:
-                d.text((x, y), line, font=f_story_head, fill=INK)
-                y += 27
-            y += 2
-            blines = wrap(d, body, f_story_body, col_w)
-            for line in blines:
-                d.text((x, y), line, font=f_story_body, fill=INK)
-                y += 20
-            y += 12
-        max_y = max(max_y, y)
+    # markets box in the last grid cell (row 5, column 1)
+    bx = MARGIN + (col_w + 16)
+    by = grid_top + 5 * (row_h + row_gap)
+    draw.rectangle([bx, by, bx + col_w, by + row_h],
+                   outline=INK, width=2)
+    draw.text((bx + 12, by + 8), "MARKETS", font=kicker_font, fill=RED)
+    market_font = load_font(True, 14)
+    draw.text((bx + 12, by + 32), "S&P 500  -3.7%   |   Bitcoin  $62,000",
+              font=market_font, fill=INK)
+    draw.text((bx + 12, by + 56), "AI sell-off rattles Wall Street as crypto",
+              font=body_font, fill=(60, 60, 60))
+    draw.text((bx + 12, by + 76), "liquidations pass $2 billion.",
+              font=body_font, fill=(60, 60, 60))
 
-    # ---- Footer ----
-    d.line([(36, 988), (988, 988)], fill=INK, width=1)
-    f_foot = font(SANS, 13)
-    d.text((W // 2, 997),
-           "All the news that fits on one page. Sources: One Turn, Horizon, "
-           "BBC News, Al Jazeera, Guardian, Financial Times.",
-           font=f_foot, fill=GREY, anchor="ma")
+    # --- footer ----------------------------------------------------------
+    draw.line([MARGIN, 972, W - MARGIN, 972], fill=GREY, width=1)
+    foot = "THE WORLD  |  Saturday, 21 November 2026  |  make.fun bounty entry"
+    fw = draw.textlength(foot, font=foot_font)
+    draw.text(((W - fw) / 2, 984), foot, font=foot_font, fill=GREY)
 
-    print("grid bottom y =", max_y)
-    img.save("entry.png")
-    print("saved entry.png")
+    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "entry.png")
+    img.save(out, "PNG")
+    print("wrote", out)
 
 
 if __name__ == "__main__":
